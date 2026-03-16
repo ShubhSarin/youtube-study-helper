@@ -6,6 +6,19 @@ from core.summarizer import summarize_transcript
 from core.flashcards import generate_flashcards
 from core.quiz import generate_quiz
 from core.rag import answer_question
+import os
+
+COOKIE_FILE_PATH = "youtube_cookies.txt"
+
+cookies_content = os.getenv("YOUTUBE_COOKIES_CONTENT")
+
+if cookies_content:
+    # Write the content to a file on the server's disk
+    with open(COOKIE_FILE_PATH, "w") as f:
+        f.write(cookies_content)
+    print("YouTube cookies file created successfully.")
+else:
+    print("YOUTUBE_COOKIES_CONTENT variable not found.")
 
 # Initialize session state
 if "video_ids" not in st.session_state:
