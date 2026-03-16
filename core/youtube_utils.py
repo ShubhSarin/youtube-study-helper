@@ -1,6 +1,8 @@
 from urllib.parse import urlparse, parse_qs
 import yt_dlp
+import os
 
+COOKIE_FILE_PATH = "../youtube_cookies.txt"
 
 def is_playlist(url: str) -> bool:
     parsed = urlparse(url)
@@ -39,6 +41,7 @@ def get_video_title(video_id: str) -> str:
             'quiet': True,
             'no_warnings': True,
             'skip_download': True,
+            'cookiefile': COOKIE_FILE_PATH if os.path.exists(COOKIE_FILE_PATH) else None,
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
