@@ -8,3 +8,4 @@ google-generativeai==0.8.5
 
 # YouTube functionality
 youtube-transcript-api==1.2.3
+yt-dlp==2025.12.8
