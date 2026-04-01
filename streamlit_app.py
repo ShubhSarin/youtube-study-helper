@@ -7,8 +7,10 @@ from core.flashcards import generate_flashcards
 from core.quiz import generate_quiz
 from core.rag import answer_question
 import os
+from pathlib import Path
 
-COOKIE_FILE_PATH = "youtube_cookies.txt"
+PROJECT_ROOT = Path(__file__).resolve().parent
+COOKIE_FILE_PATH = PROJECT_ROOT / "youtube_cookies.txt"
 
 cookies_content = os.getenv("YOUTUBE_COOKIES_CONTENT")
 
@@ -27,6 +29,8 @@ if "video_titles" not in st.session_state:
     st.session_state["video_titles"] = {}
 if "transcripts" not in st.session_state:
     st.session_state["transcripts"] = {}
+if "transcript_errors" not in st.session_state:
+    st.session_state["transcript_errors"] = {}
 if "summaries" not in st.session_state:
     st.session_state["summaries"] = {}
 if "flashcards" not in st.session_state:
@@ -52,21 +56,36 @@ if st.button("Process") and url:
         st.session_state["video_ids"] = video_ids
         st.session_state["video_titles"] = {}
         st.session_state["transcripts"] = {}
+        st.session_state["transcript_errors"] = {}
         st.session_state["summaries"] = {}
         st.session_state["flashcards"] = {}
         st.session_state["quizzes"] = {}
         
         for vid in video_ids:
             st.session_state["video_titles"][vid] = get_video_title(vid)
-            st.session_state["transcripts"][vid] = extract_transcript_from_id(vid)
+            transcript = extract_transcript_from_id(vid)
+            if transcript.startswith("Error:"):
+                st.session_state["transcript_errors"][vid] = transcript
+            else:
+                st.session_state["transcripts"][vid] = transcript
     
     st.success(f"✅ Processed {len(video_ids)} video(s)")
+    if st.session_state["transcript_errors"]:
+        st.warning(
+            f"⚠️ Could not extract transcript for {len(st.session_state['transcript_errors'])} video(s)."
+        )
 
 # Display videos and interactive buttons
 if st.session_state["video_ids"]:
     for vid in st.session_state["video_ids"]:
         title = st.session_state["video_titles"].get(vid, vid)
         st.header(f"🎬 {title}")
+
+        transcript_error = st.session_state["transcript_errors"].get(vid)
+        if transcript_error:
+            st.error(transcript_error)
+            st.divider()
+            continue
         
         col1, col2, col3 = st.columns(3)
         

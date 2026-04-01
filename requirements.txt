@@ -218,7 +218,7 @@ websockets==15.0.1
 wrapt==2.0.1
 xxhash==3.6.0
 yarl==1.22.0
-youtube-transcript-api==1.2.3
+youtube-transcript-api==1.0.3
 yt-dlp==2026.3.13
 zipp==3.23.0
 zstandard==0.25.0

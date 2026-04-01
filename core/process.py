@@ -30,6 +30,15 @@ def process_youtube_url(url: str) -> dict:
     for vid in video_ids:
         transcript = extract_transcript_from_id(vid)
 
+        if not transcript or transcript.startswith("Error:"):
+            results[vid] = {
+                "transcript": transcript,
+                "summary": "Cannot generate notes because transcript extraction failed.",
+                "flashcards": "Cannot generate flashcards because transcript extraction failed.",
+                "quiz": "Cannot generate quiz because transcript extraction failed.",
+            }
+            continue
+
         results[vid] = {
             "transcript": transcript,
             "summary": summarize_transcript(transcript),
