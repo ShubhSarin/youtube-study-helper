@@ -1,133 +1,107 @@
-from youtube_transcript_api import YouTubeTranscriptApi
-from urllib.parse import urlparse, parse_qs
-from pathlib import Path
-import re
+import logging
+
 import requests
-import yt_dlp
+from core.env_utils import ENV_PATH, read_env_value
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-COOKIE_FILE_PATH = PROJECT_ROOT / "youtube_cookies.txt"
+SUPADATA_TRANSCRIPT_URL = "https://api.supadata.ai/v1/transcript"
+SUPADATA_TIMEOUT_SECONDS = 20
+
+LOGGER = logging.getLogger(__name__)
 
 
-def _extract_text_from_json3(payload: dict) -> str:
+SUPADATA_API_KEY = read_env_value("SUPADATA_API_KEY")
+if not SUPADATA_API_KEY:
+    raise RuntimeError(
+        f"SUPADATA_API_KEY not found. Set it in the environment or {ENV_PATH} before starting the server."
+    )
+
+
+def _build_watch_url(video_id: str) -> str:
+    return f"https://www.youtube.com/watch?v={video_id}"
+
+
+def _normalize_transcript_payload(payload: dict) -> str | None:
+    content = payload.get("content")
+    if not isinstance(content, list) or not content:
+        return None
+
     parts = []
-    for event in payload.get("events", []):
-        for seg in event.get("segs", []):
-            text = seg.get("utf8", "")
-            if text:
-                parts.append(text)
-    return " ".join(parts).replace("\n", " ").strip()
-
-
-def _extract_text_from_vtt(vtt_text: str) -> str:
-    lines = []
-    for raw_line in vtt_text.splitlines():
-        line = raw_line.strip()
-        if not line:
+    for item in content:
+        if not isinstance(item, dict):
             continue
-        if line == "WEBVTT":
+        text = item.get("text", "")
+        if isinstance(text, str) and text.strip():
+            parts.append(text.strip())
+
+    transcript = " ".join(parts).strip()
+    return transcript or None
+
+
+def _fetch_transcript_from_supadata(video_url: str) -> str | None:
+    try:
+        response = requests.get(
+            SUPADATA_TRANSCRIPT_URL,
+            headers={"x-api-key": SUPADATA_API_KEY},
+            params={"url": video_url},
+            timeout=SUPADATA_TIMEOUT_SECONDS,
+        )
+        response.raise_for_status()
+        payload = response.json()
+    except requests.Timeout as exc:
+        LOGGER.error("Timed out fetching transcript for %s via Supadata: %s", video_url, exc)
+        return None
+    except requests.ConnectionError as exc:
+        LOGGER.error("Connection error fetching transcript for %s via Supadata: %s", video_url, exc)
+        return None
+    except requests.HTTPError as exc:
+        status_code = exc.response.status_code if exc.response is not None else "unknown"
+        response_body = exc.response.text[:200].replace("\n", " ") if exc.response is not None else ""
+        LOGGER.error(
+            "Supadata returned HTTP %s for %s. Response: %s",
+            status_code,
+            video_url,
+            response_body,
+        )
+        return None
+    except requests.RequestException as exc:
+        LOGGER.error("Unexpected request error fetching transcript for %s via Supadata: %s", video_url, exc)
+        return None
+    except ValueError as exc:
+        LOGGER.error("Supadata returned invalid JSON for %s: %s", video_url, exc)
+        return None
+
+    transcript = _normalize_transcript_payload(payload)
+    if transcript:
+        return transcript
+
+    LOGGER.error("Supadata returned no transcript content for %s", video_url)
+    return None
+
+
+def _format_transcript_error(video_id: str) -> str:
+    return f"Error: Could not fetch transcript for video {video_id} from Supadata."
+
+
+def extract_transcripts_from_ids(video_ids: list[str]) -> tuple[dict[str, str], dict[str, str]]:
+    transcripts: dict[str, str] = {}
+    transcript_errors: dict[str, str] = {}
+
+    for video_id in video_ids:
+        transcript = _fetch_transcript_from_supadata(_build_watch_url(video_id))
+        if transcript:
+            transcripts[video_id] = transcript
             continue
-        if "-->" in line:
-            continue
-        if line.isdigit():
-            continue
-        lines.append(line)
 
-    cleaned = " ".join(lines)
-    cleaned = re.sub(r"<[^>]+>", "", cleaned)
-    return cleaned.strip()
+        error_message = _format_transcript_error(video_id)
+        LOGGER.warning("%s Skipping this video.", error_message)
+        transcript_errors[video_id] = error_message
 
-
-def _fetch_transcript_via_ytdlp(video_id: str) -> str:
-    url = f"https://www.youtube.com/watch?v={video_id}"
-    opts = {
-        "quiet": True,
-        "no_warnings": True,
-        "skip_download": True,
-        "ignoreconfig": True,
-        "noplaylist": True,
-    }
-    if COOKIE_FILE_PATH.exists():
-        opts["cookiefile"] = str(COOKIE_FILE_PATH)
-
-    with yt_dlp.YoutubeDL(opts) as ydl:
-        info = ydl.extract_info(url, download=False)
-
-    subtitle_map = info.get("subtitles") or {}
-    auto_map = info.get("automatic_captions") or {}
-
-    # Prefer manual subtitles, then auto captions.
-    candidates = subtitle_map if subtitle_map else auto_map
-    if not candidates:
-        return ""
-
-    preferred_langs = ["en", "en-US"]
-    lang_key = next((l for l in preferred_langs if l in candidates), None)
-    if not lang_key:
-        lang_key = next(iter(candidates.keys()))
-
-    tracks = candidates.get(lang_key, [])
-    if not tracks:
-        return ""
-
-    json3_track = next((t for t in tracks if t.get("ext") == "json3" and t.get("url")), None)
-    if json3_track:
-        resp = requests.get(json3_track["url"], timeout=20)
-        resp.raise_for_status()
-        text = _extract_text_from_json3(resp.json())
-        if text:
-            return text
-
-    # Fallback to VTT/SRV subtitle formats.
-    any_track = next((t for t in tracks if t.get("url")), None)
-    if not any_track:
-        return ""
-
-    resp = requests.get(any_track["url"], timeout=20)
-    resp.raise_for_status()
-    return _extract_text_from_vtt(resp.text)
-
-def get_video_id(youtube_url: str) -> str:
-    parsed = urlparse(youtube_url)
-
-    if parsed.hostname in ["www.youtube.com", "youtube.com"]:
-        return parse_qs(parsed.query)["v"][0]
-
-    if parsed.hostname == "youtu.be":
-        return parsed.path[1:]
-
-    raise ValueError("Invalid YouTube URL")
+    return transcripts, transcript_errors
 
 
 def extract_transcript_from_id(video_id: str) -> str:
-    try:
-        api = YouTubeTranscriptApi()
-        if COOKIE_FILE_PATH.exists():
-            try:
-                api = YouTubeTranscriptApi(cookie_path=str(COOKIE_FILE_PATH))
-            except Exception:
-                # Fall back to cookie-less mode when cookie parsing/loading fails.
-                api = YouTubeTranscriptApi()
+    transcript = _fetch_transcript_from_supadata(_build_watch_url(video_id))
+    if transcript:
+        return transcript
 
-        # Try English first, then fall back to any available transcript language.
-        try:
-            transcript = api.fetch(video_id, languages=["en", "en-US"])
-        except Exception:
-            transcript_list = api.list(video_id)
-            transcript = next(iter(transcript_list)).fetch()
-
-        full_text = " ".join(chunk.text for chunk in transcript).strip()
-        if not full_text:
-            return "Error: Transcript is empty"
-        return full_text
-        
-    except Exception as e:
-        try:
-            fallback_text = _fetch_transcript_via_ytdlp(video_id)
-            if fallback_text:
-                return fallback_text
-        except Exception:
-            pass
-
-        # This will catch the error and show it in your Streamlit UI
-        return f"Error: {e}"
+    return _format_transcript_error(video_id)

@@ -160,7 +160,6 @@ PyPika==0.48.9
 pyproject_hooks==1.2.0
 pyreadline3==3.5.4
 python-dateutil==2.9.0.post0
-python-dotenv==1.1.0
 python-multipart==0.0.21
 pytube==15.0.0
 pytz==2025.2
@@ -218,7 +217,6 @@ websockets==15.0.1
 wrapt==2.0.1
 xxhash==3.6.0
 yarl==1.22.0
-youtube-transcript-api==1.0.3
 yt-dlp==2026.3.13
 zipp==3.23.0
 zstandard==0.25.0

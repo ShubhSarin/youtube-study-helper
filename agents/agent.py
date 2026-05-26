@@ -1,29 +1,33 @@
 from google.adk.agents import Agent
 
+from core.env_utils import read_env_value
+
+GENERATION_MODEL_NAME = read_env_value("GENERATION_MODEL_NAME") or "gemma-4-31b-it"
+
 summary_agent = Agent(
     name="youtube_summary_agent",
-    model="gemini-2.5-flash",
+    model=GENERATION_MODEL_NAME,
     description="Agent that summarizes YouTube transcripts into structured notes.",
     instruction="Summarizes YouTube transcripts into structured notes."
 )
 
 flashcard_agent = Agent(
     name="youtube_flashcard_agent",
-    model="gemini-2.5-flash",
+    model=GENERATION_MODEL_NAME,
     description="Agent that generates flashcards from YouTube transcripts.",
     instruction="Generates flashcards from YouTube transcripts."
 )
 
 quiz_agent = Agent(
     name="youtube_quiz_agent",
-    model="gemini-2.5-flash",
+    model=GENERATION_MODEL_NAME,
     description="Agent that generates quizzes from YouTube transcripts.",
     instruction="Generates quizzes from YouTube transcripts."
 )
 
 rag_agent = Agent(
     name="youtube_rag_agent",
-    model="gemini-2.5-flash",
+    model=GENERATION_MODEL_NAME,
     description="Agent that answers questions based on YouTube video transcripts.",
     instruction="""You are a helpful assistant that answers questions based on YouTube video transcripts provided to you.
     

@@ -1,6 +1,6 @@
 from core.youtube_utils import is_playlist, extract_video_id
 from core.playlist import get_video_ids_from_playlist
-from core.transcript import extract_transcript_from_id
+from core.transcript import extract_transcripts_from_ids
 from core.summarizer import summarize_transcript
 from core.flashcards import generate_flashcards
 from core.quiz import generate_quiz
@@ -27,12 +27,14 @@ def process_youtube_url(url: str) -> dict:
     else:
         video_ids = [extract_video_id(url)]
 
-    for vid in video_ids:
-        transcript = extract_transcript_from_id(vid)
+    transcripts, transcript_errors = extract_transcripts_from_ids(video_ids)
 
-        if not transcript or transcript.startswith("Error:"):
+    for vid in video_ids:
+        transcript = transcripts.get(vid)
+
+        if not transcript:
             results[vid] = {
-                "transcript": transcript,
+                "transcript": transcript_errors.get(vid, f"Error: Could not fetch transcript for video {vid}."),
                 "summary": "Cannot generate notes because transcript extraction failed.",
                 "flashcards": "Cannot generate flashcards because transcript extraction failed.",
                 "quiz": "Cannot generate quiz because transcript extraction failed.",

@@ -1,26 +1,32 @@
 import streamlit as st
-from core.transcript import extract_transcript_from_id
+from core.env_utils import read_env_value
+from core.transcript import extract_transcripts_from_ids
 from core.youtube_utils import is_playlist, extract_video_id, get_video_title
 from core.playlist import get_video_ids_from_playlist
 from core.summarizer import summarize_transcript
 from core.flashcards import generate_flashcards
 from core.quiz import generate_quiz
 from core.rag import answer_question
-import os
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 COOKIE_FILE_PATH = PROJECT_ROOT / "youtube_cookies.txt"
 
-cookies_content = os.getenv("YOUTUBE_COOKIES_CONTENT")
 
-if cookies_content:
-    # Write the content to a file on the server's disk
-    with open(COOKIE_FILE_PATH, "w") as f:
-        f.write(cookies_content)
-    print("YouTube cookies file created successfully.")
-else:
-    print("YOUTUBE_COOKIES_CONTENT variable not found.")
+def sync_cookie_file() -> None:
+    cookies_content = read_env_value("YOUTUBE_COOKIES_CONTENT")
+    if not cookies_content:
+        return
+
+    if COOKIE_FILE_PATH.exists():
+        existing_content = COOKIE_FILE_PATH.read_text(encoding="utf-8")
+        if existing_content == cookies_content:
+            return
+
+    COOKIE_FILE_PATH.write_text(cookies_content, encoding="utf-8")
+
+
+sync_cookie_file()
 
 # Initialize session state
 if "video_ids" not in st.session_state:
@@ -39,6 +45,37 @@ if "quizzes" not in st.session_state:
     st.session_state["quizzes"] = {}
 if "chat_history" not in st.session_state:
     st.session_state["chat_history"] = []
+if "pending_generation" not in st.session_state:
+    st.session_state["pending_generation"] = None
+
+
+def queue_generation(video_id: str, action: str) -> None:
+    st.session_state["pending_generation"] = {
+        "video_id": video_id,
+        "action": action,
+    }
+    st.rerun()
+
+
+def run_generation_action(video_id: str, action: str) -> None:
+    transcript = st.session_state["transcripts"][video_id]
+
+    if action == "summary":
+        with st.spinner("Generating notes..."):
+            st.session_state["summaries"][video_id] = summarize_transcript(transcript)
+        return
+
+    if action == "flashcards":
+        with st.spinner("Generating flashcards..."):
+            st.session_state["flashcards"][video_id] = generate_flashcards(transcript)
+        return
+
+    if action == "quiz":
+        with st.spinner("Generating quiz..."):
+            st.session_state["quizzes"][video_id] = generate_quiz(transcript)
+        return
+
+    raise ValueError(f"Unknown generation action: {action}")
 
 st.title("YouTube Study Assistant")
 
@@ -63,11 +100,10 @@ if st.button("Process") and url:
         
         for vid in video_ids:
             st.session_state["video_titles"][vid] = get_video_title(vid)
-            transcript = extract_transcript_from_id(vid)
-            if transcript.startswith("Error:"):
-                st.session_state["transcript_errors"][vid] = transcript
-            else:
-                st.session_state["transcripts"][vid] = transcript
+
+        transcripts, transcript_errors = extract_transcripts_from_ids(video_ids)
+        st.session_state["transcripts"] = transcripts
+        st.session_state["transcript_errors"] = transcript_errors
     
     st.success(f"✅ Processed {len(video_ids)} video(s)")
     if st.session_state["transcript_errors"]:
@@ -77,6 +113,9 @@ if st.button("Process") and url:
 
 # Display videos and interactive buttons
 if st.session_state["video_ids"]:
+    pending_generation = st.session_state["pending_generation"]
+    is_generation_running = pending_generation is not None
+
     for vid in st.session_state["video_ids"]:
         title = st.session_state["video_titles"].get(vid, vid)
         st.header(f"🎬 {title}")
@@ -87,28 +126,36 @@ if st.session_state["video_ids"]:
             st.divider()
             continue
         
-        col1, col2, col3 = st.columns(3)
-        
-        # Generate Summary Button
-        with col1:
-            if st.button(f"📘 Generate Notes", key=f"summary_{vid}"):
-                with st.spinner("Generating notes..."):
-                    transcript = st.session_state["transcripts"][vid]
-                    st.session_state["summaries"][vid] = summarize_transcript(transcript)
-        
-        # Generate Flashcards Button
-        with col2:
-            if st.button(f"🧠 Generate Flashcards", key=f"flashcards_{vid}"):
-                with st.spinner("Generating flashcards..."):
-                    transcript = st.session_state["transcripts"][vid]
-                    st.session_state["flashcards"][vid] = generate_flashcards(transcript)
-        
-        # Generate Quiz Button
-        with col3:
-            if st.button(f"📝 Generate Quiz", key=f"quiz_{vid}"):
-                with st.spinner("Generating quiz..."):
-                    transcript = st.session_state["transcripts"][vid]
-                    st.session_state["quizzes"][vid] = generate_quiz(transcript)
+        action_area = st.empty()
+        with action_area.container():
+            col1, col2, col3 = st.columns(3)
+            if col1.button(
+                "📘 Generate Notes",
+                key=f"summary_{vid}",
+                disabled=is_generation_running,
+            ):
+                queue_generation(vid, "summary")
+
+            if col2.button(
+                "🧠 Generate Flashcards",
+                key=f"flashcards_{vid}",
+                disabled=is_generation_running,
+            ):
+                queue_generation(vid, "flashcards")
+
+            if col3.button(
+                "📝 Generate Quiz",
+                key=f"quiz_{vid}",
+                disabled=is_generation_running,
+            ):
+                queue_generation(vid, "quiz")
+
+            if pending_generation and pending_generation["video_id"] == vid:
+                try:
+                    run_generation_action(vid, pending_generation["action"])
+                finally:
+                    st.session_state["pending_generation"] = None
+                st.rerun()
         
         # Display generated content
         if vid in st.session_state["summaries"]:

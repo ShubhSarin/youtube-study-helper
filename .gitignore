@@ -1,3 +1,5 @@
 .env
 env
 youtube_cookies.txt
+SUPADATA_IMPLEMENTATION_LOG.md
+.venv
