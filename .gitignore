@@ -3,3 +3,7 @@ env
 youtube_cookies.txt
 SUPADATA_IMPLEMENTATION_LOG.md
 .venv
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
