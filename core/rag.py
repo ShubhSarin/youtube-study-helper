@@ -307,6 +307,7 @@ Write a direct answer in 1-3 sentences.
 Return only the final answer text.
 Do not repeat the question.
 Do not mention constraints, source numbers, transcript excerpts, or drafts.
+Respond in English only. Never use Chinese.
 If the excerpts are insufficient, return exactly: I don't have that information in the transcripts."""
 
     answer = call_llm(prompt, system_instruction=RAG_SYSTEM_INSTRUCTION)

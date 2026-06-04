@@ -9,6 +9,71 @@ from core.quiz import generate_quiz
 from core.rag import answer_question
 from pathlib import Path
 
+# ---------------------------------------------------------------------------
+# Page configuration
+# ---------------------------------------------------------------------------
+st.set_page_config(
+    page_title="YouTube Study Helper",
+    page_icon="🎓",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+# ---------------------------------------------------------------------------
+# Custom CSS
+# ---------------------------------------------------------------------------
+st.markdown(
+    """
+<style>
+    .main-header {
+        font-size: 2.4rem;
+        font-weight: 700;
+        margin-bottom: 0.2rem;
+    }
+    .main-subheader {
+        font-size: 1.05rem;
+        color: #6b7280;
+        margin-bottom: 1.5rem;
+    }
+    .video-card {
+        background: transparent;
+        border: 1px solid rgba(128, 128, 128, 0.2);
+        border-radius: 12px;
+        padding: 1.25rem 1.5rem;
+        margin-bottom: 1rem;
+    }
+    .video-title {
+        font-size: 1.15rem;
+        font-weight: 600;
+        margin-bottom: 0.75rem;
+    }
+    .stButton > button {
+        border-radius: 8px;
+        font-weight: 500;
+        transition: all 0.15s ease;
+        width: 100%;
+    }
+    .stButton > button:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+    .chat-container {
+        border-radius: 12px;
+        padding: 1rem 0;
+        margin-top: 0.5rem;
+    }
+    .stChatMessage {
+        border-radius: 10px;
+    }
+    footer {visibility: hidden;}
+</style>
+""",
+    unsafe_allow_html=True,
+)
+
+# ---------------------------------------------------------------------------
+# Cookie sync (for yt-dlp authenticated requests)
+# ---------------------------------------------------------------------------
 PROJECT_ROOT = Path(__file__).resolve().parent
 COOKIE_FILE_PATH = PROJECT_ROOT / "youtube_cookies.txt"
 
@@ -17,194 +82,250 @@ def sync_cookie_file() -> None:
     cookies_content = read_env_value("YOUTUBE_COOKIES_CONTENT")
     if not cookies_content:
         return
-
     if COOKIE_FILE_PATH.exists():
         existing_content = COOKIE_FILE_PATH.read_text(encoding="utf-8")
         if existing_content == cookies_content:
             return
-
     COOKIE_FILE_PATH.write_text(cookies_content, encoding="utf-8")
 
 
 sync_cookie_file()
 
-# Initialize session state
-if "video_ids" not in st.session_state:
-    st.session_state["video_ids"] = []
-if "video_titles" not in st.session_state:
-    st.session_state["video_titles"] = {}
-if "transcripts" not in st.session_state:
-    st.session_state["transcripts"] = {}
-if "transcript_errors" not in st.session_state:
-    st.session_state["transcript_errors"] = {}
-if "summaries" not in st.session_state:
-    st.session_state["summaries"] = {}
-if "flashcards" not in st.session_state:
-    st.session_state["flashcards"] = {}
-if "quizzes" not in st.session_state:
-    st.session_state["quizzes"] = {}
-if "chat_history" not in st.session_state:
-    st.session_state["chat_history"] = []
-if "pending_generation" not in st.session_state:
-    st.session_state["pending_generation"] = None
+# ---------------------------------------------------------------------------
+# Session state
+# ---------------------------------------------------------------------------
+DEFAULTS: dict[str, object] = {
+    "video_ids": [],
+    "video_titles": {},
+    "transcripts": {},
+    "transcript_errors": {},
+    "summaries": {},
+    "flashcards": {},
+    "quizzes": {},
+    "chat_history": [],
+    "pending_generation": None,
+    "processing": False,
+    "processing_result": None,
+}
+for key, default in DEFAULTS.items():
+    if key not in st.session_state:
+        st.session_state[key] = default
 
 
+def reset_session() -> None:
+    for key, default in DEFAULTS.items():
+        st.session_state[key] = default
+
+
+# ---------------------------------------------------------------------------
+# Generation helpers
+# ---------------------------------------------------------------------------
 def queue_generation(video_id: str, action: str) -> None:
-    st.session_state["pending_generation"] = {
-        "video_id": video_id,
-        "action": action,
-    }
+    if st.session_state.get("pending_generation") is not None:
+        return
+    st.session_state["pending_generation"] = {"video_id": video_id, "action": action}
     st.rerun()
 
 
 def run_generation_action(video_id: str, action: str) -> None:
     transcript = st.session_state["transcripts"][video_id]
 
-    if action == "summary":
-        with st.spinner("Generating notes..."):
-            st.session_state["summaries"][video_id] = summarize_transcript(transcript)
-        return
+    action_map = {
+        "summary": ("Generating notes...", "summaries", summarize_transcript),
+        "flashcards": ("Generating flashcards...", "flashcards", generate_flashcards),
+        "quiz": ("Generating quiz...", "quizzes", generate_quiz),
+    }
+    spinner_text, state_key, func = action_map[action]
 
-    if action == "flashcards":
-        with st.spinner("Generating flashcards..."):
-            st.session_state["flashcards"][video_id] = generate_flashcards(transcript)
-        return
+    with st.spinner(spinner_text):
+        st.session_state[state_key][video_id] = func(transcript)
 
-    if action == "quiz":
-        with st.spinner("Generating quiz..."):
-            st.session_state["quizzes"][video_id] = generate_quiz(transcript)
-        return
 
-    raise ValueError(f"Unknown generation action: {action}")
+# ---------------------------------------------------------------------------
+# Sidebar
+# ---------------------------------------------------------------------------
+with st.sidebar:
+    st.markdown("### 🎓 Study Helper")
+    st.caption("Turn YouTube videos into study material with AI.")
 
-st.title("YouTube Study Assistant")
+    st.divider()
 
-url = st.text_input("Paste YouTube video or playlist URL")
+    if st.session_state["video_ids"]:
+        st.metric("Videos loaded", len(st.session_state["video_ids"]))
+        notes_count = len(st.session_state["summaries"])
+        cards_count = len(st.session_state["flashcards"])
+        quiz_count = len(st.session_state["quizzes"])
+        st.caption(f"📘 {notes_count} notes  ·  🧠 {cards_count} flashcards  ·  📝 {quiz_count} quizzes")
 
-if st.button("Process") and url:
+    st.divider()
+
+    if st.button("🗑️ Clear session", use_container_width=True):
+        reset_session()
+        st.rerun()
+
+    st.divider()
+    st.caption("Built with Streamlit  •  Powered by AI")
+
+# ---------------------------------------------------------------------------
+# Main content
+# ---------------------------------------------------------------------------
+st.markdown('<p class="main-header">🎓 YouTube Study Helper</p>', unsafe_allow_html=True)
+st.markdown(
+    '<p class="main-subheader">Paste a YouTube video or playlist URL to generate notes, flashcards, and quizzes — then ask questions about the content.</p>',
+    unsafe_allow_html=True,
+)
+
+# URL input
+col_url, col_btn = st.columns([5, 1])
+with col_url:
+    url = st.text_input(
+        "YouTube URL",
+        placeholder="https://www.youtube.com/watch?v=... or playlist URL",
+        label_visibility="collapsed",
+    )
+is_busy = st.session_state.get("processing", False) or st.session_state.get("pending_generation") is not None
+with col_btn:
+    process_clicked = st.button("🚀 Process", use_container_width=True, disabled=is_busy)
+
+if process_clicked and url and not st.session_state.get("processing") and not st.session_state.get("pending_generation"):
+    st.session_state["processing"] = True
+    st.rerun()
+
+if st.session_state.get("processing"):
     with st.spinner("Extracting transcripts..."):
-        # Extract video IDs
-        if is_playlist(url):
-            video_ids = get_video_ids_from_playlist(url)
-        else:
-            video_ids = [extract_video_id(url)]
-        
-        # Store video IDs and extract transcripts
-        st.session_state["video_ids"] = video_ids
-        st.session_state["video_titles"] = {}
-        st.session_state["transcripts"] = {}
-        st.session_state["transcript_errors"] = {}
-        st.session_state["summaries"] = {}
-        st.session_state["flashcards"] = {}
-        st.session_state["quizzes"] = {}
-        
-        for vid in video_ids:
-            st.session_state["video_titles"][vid] = get_video_title(vid)
+        try:
+            if is_playlist(url):
+                video_ids = get_video_ids_from_playlist(url)
+            else:
+                video_ids = [extract_video_id(url)]
 
-        transcripts, transcript_errors = extract_transcripts_from_ids(video_ids)
-        st.session_state["transcripts"] = transcripts
-        st.session_state["transcript_errors"] = transcript_errors
-    
-    st.success(f"✅ Processed {len(video_ids)} video(s)")
-    if st.session_state["transcript_errors"]:
-        st.warning(
-            f"⚠️ Could not extract transcript for {len(st.session_state['transcript_errors'])} video(s)."
-        )
+            st.session_state["video_ids"] = video_ids
+            st.session_state["video_titles"] = {vid: get_video_title(vid) for vid in video_ids}
+            st.session_state["transcripts"], st.session_state["transcript_errors"] = extract_transcripts_from_ids(video_ids)
+            st.session_state["summaries"] = {}
+            st.session_state["flashcards"] = {}
+            st.session_state["quizzes"] = {}
+            if st.session_state["transcript_errors"]:
+                st.session_state["processing_result"] = ("warning", f"⚠️ Could not extract transcript for {len(st.session_state['transcript_errors'])} video(s).")
+            else:
+                st.session_state["processing_result"] = ("success", f"✅ Processed {len(video_ids)} video(s) successfully!")
+        finally:
+            st.session_state["processing"] = False
+        st.rerun()
 
-# Display videos and interactive buttons
-if st.session_state["video_ids"]:
-    pending_generation = st.session_state["pending_generation"]
-    is_generation_running = pending_generation is not None
+if st.session_state.get("processing_result"):
+    level, message = st.session_state["processing_result"]
+    if level == "success":
+        st.success(message)
+    else:
+        st.warning(message)
+    st.session_state["processing_result"] = None
+
+# ---------------------------------------------------------------------------
+# Handle pending generation (must happen BEFORE rendering cards to avoid
+# st.rerun() cutting off HTML elements mid-render)
+# ---------------------------------------------------------------------------
+pending_generation = st.session_state.get("pending_generation")
+if pending_generation:
+    vid = pending_generation["video_id"]
+    action = pending_generation["action"]
+    try:
+        run_generation_action(vid, action)
+    finally:
+        st.session_state["pending_generation"] = None
+    st.rerun()
+
+# ---------------------------------------------------------------------------
+# Video cards (only render when not busy with processing)
+# ---------------------------------------------------------------------------
+if st.session_state["video_ids"] and not st.session_state.get("processing"):
+    is_busy = st.session_state.get("pending_generation") is not None
 
     for vid in st.session_state["video_ids"]:
         title = st.session_state["video_titles"].get(vid, vid)
-        st.header(f"🎬 {title}")
+
+        st.markdown(f'<div class="video-card">', unsafe_allow_html=True)
+        st.markdown(f'<p class="video-title">🎬 {title}</p>', unsafe_allow_html=True)
 
         transcript_error = st.session_state["transcript_errors"].get(vid)
         if transcript_error:
             st.error(transcript_error)
-            st.divider()
+            st.markdown("</div>", unsafe_allow_html=True)
             continue
-        
-        action_area = st.empty()
-        with action_area.container():
-            col1, col2, col3 = st.columns(3)
-            if col1.button(
-                "📘 Generate Notes",
-                key=f"summary_{vid}",
-                disabled=is_generation_running,
-            ):
+
+        # Action buttons
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            if st.button("📘 Notes", key=f"summary_{vid}", disabled=is_busy, use_container_width=True):
                 queue_generation(vid, "summary")
-
-            if col2.button(
-                "🧠 Generate Flashcards",
-                key=f"flashcards_{vid}",
-                disabled=is_generation_running,
-            ):
+        with col2:
+            if st.button("🧠 Flashcards", key=f"flashcards_{vid}", disabled=is_busy, use_container_width=True):
                 queue_generation(vid, "flashcards")
-
-            if col3.button(
-                "📝 Generate Quiz",
-                key=f"quiz_{vid}",
-                disabled=is_generation_running,
-            ):
+        with col3:
+            if st.button("📝 Quiz", key=f"quiz_{vid}", disabled=is_busy, use_container_width=True):
                 queue_generation(vid, "quiz")
 
-            if pending_generation and pending_generation["video_id"] == vid:
-                try:
-                    run_generation_action(vid, pending_generation["action"])
-                finally:
-                    st.session_state["pending_generation"] = None
-                st.rerun()
-        
-        # Display generated content
-        if vid in st.session_state["summaries"]:
-            with st.expander("📘 Notes", expanded=True):
-                st.write(st.session_state["summaries"][vid])
-        
-        if vid in st.session_state["flashcards"]:
-            with st.expander("🧠 Flashcards", expanded=True):
-                st.write(st.session_state["flashcards"][vid])
-        
-        if vid in st.session_state["quizzes"]:
-            with st.expander("📝 Quiz", expanded=True):
-                st.write(st.session_state["quizzes"][vid])
-        
-        st.divider()
+        # Display generated content in tabs
+        has_notes = vid in st.session_state["summaries"]
+        has_flashcards = vid in st.session_state["flashcards"]
+        has_quiz = vid in st.session_state["quizzes"]
 
-# RAG Q&A Section - Ask questions about all videos
+        if has_notes or has_flashcards or has_quiz:
+            tab_labels = []
+            if has_notes:
+                tab_labels.append("📘 Notes")
+            if has_flashcards:
+                tab_labels.append("🧠 Flashcards")
+            if has_quiz:
+                tab_labels.append("📝 Quiz")
+            tabs = st.tabs(tab_labels)
+            tab_idx = 0
+            if has_notes:
+                with tabs[tab_idx]:
+                    st.markdown(st.session_state["summaries"][vid])
+                tab_idx += 1
+            if has_flashcards:
+                with tabs[tab_idx]:
+                    st.markdown(st.session_state["flashcards"][vid])
+                tab_idx += 1
+            if has_quiz:
+                with tabs[tab_idx]:
+                    st.markdown(st.session_state["quizzes"][vid])
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
+# ---------------------------------------------------------------------------
+# Q&A section
+# ---------------------------------------------------------------------------
 if st.session_state["video_ids"] and st.session_state["transcripts"]:
-    st.header("💬 Ask Questions About the Videos")
-    st.write("Ask any question about the content from the processed videos.")
-    
-    # Display chat history
-    for chat in st.session_state["chat_history"]:
-        with st.chat_message("user"):
-            st.write(chat["question"])
-        with st.chat_message("assistant"):
-            st.write(chat["answer"])
-    
-    # Question input
-    question = st.chat_input("Ask a question about the video content...")
-    
-    if question:
-        # Add user question to chat
-        with st.chat_message("user"):
-            st.write(question)
-        
-        # Generate answer
-        with st.chat_message("assistant"):
-            with st.spinner("Thinking..."):
-                answer = answer_question(
-                    question, 
-                    st.session_state["transcripts"],
-                    st.session_state["video_titles"]
-                )
-                st.write(answer)
-        
-        # Save to chat history
-        st.session_state["chat_history"].append({
-            "question": question,
-            "answer": answer
-        })
-        st.rerun()
+    st.divider()
+    st.markdown("### 💬 Ask Questions About the Videos")
+
+    with st.container():
+        st.markdown('<div class="chat-container">', unsafe_allow_html=True)
+
+        # Chat history
+        for chat in st.session_state["chat_history"]:
+            with st.chat_message("user"):
+                st.write(chat["question"])
+            with st.chat_message("assistant"):
+                st.write(chat["answer"])
+
+        # Input
+        question = st.chat_input("Ask a question about the video content...")
+        if question:
+            with st.chat_message("user"):
+                st.write(question)
+            with st.chat_message("assistant"):
+                with st.spinner("Thinking..."):
+                    answer = answer_question(
+                        question,
+                        st.session_state["transcripts"],
+                        st.session_state["video_titles"],
+                    )
+                    st.write(answer)
+            st.session_state["chat_history"].append({"question": question, "answer": answer})
+            st.rerun()
+
+        st.markdown("</div>", unsafe_allow_html=True)
+

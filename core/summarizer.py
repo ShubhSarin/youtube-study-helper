@@ -11,6 +11,7 @@ You are given a YouTube lecture transcript.
 Create chapter-wise study notes.
 Use headings, sub-headings, and bullet points.
 Do NOT add information not present in the transcript.
+Respond in English only. Never use Chinese.
 
 Transcript:
 {transcript}

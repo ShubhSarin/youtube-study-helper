@@ -1,53 +1,110 @@
 # 🎓 YouTube Study Helper
 
-YouTube Study Helper is a Streamlit app that turns YouTube videos and playlists into study material. It fetches transcripts, generates notes, flashcards, and quizzes on demand, and answers follow-up questions with retrieval over transcript excerpts instead of relying on coarse summaries.
+[![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/)
+[![Streamlit](https://img.shields.io/badge/Streamlit-1.x-FF4B4B.svg)](https://streamlit.io/)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-## ✨ Current Features
+Turn YouTube videos and playlists into study material with AI. Paste a URL, get **notes**, **flashcards**, and **quizzes** — then ask questions with retrieval-augmented generation (RAG) over the full transcript.
 
-- 📺 Process a single YouTube video or an entire playlist
-- 📝 Generate study notes from the transcript of each processed video
-- 🧠 Generate flashcards on demand for each video
-- 📊 Generate quizzes on demand for each video
-- 💬 Ask questions across all processed videos with embedding-based RAG
-- 🎯 Work across multiple videos in one session
-- ☁️ Use Supadata transcript retrieval so hosted deployments are not blocked by transcript scraping limitations
-- 🧷 Keep the UI stable during long-running generation by disabling the full action row while work is in progress
+## ✨ Features
 
-## 🧠 Current Implementation Logic
+- 📺 **Single video or playlist** — process one lecture or an entire course
+- 📘 **Study notes** — chapter-wise notes generated from the transcript
+- 🧠 **Flashcards** — concise Q&A pairs for active recall
+- 📝 **Quizzes** — 5-question multiple-choice quiz per video
+- 💬 **RAG-powered Q&A** — ask questions across all processed videos; answers are grounded in transcript excerpts, not summaries
+- ☁️ **Supadata transcripts** — reliable transcript retrieval that works in cloud deployments
+- 🔀 **Multi-provider LLM** — switch between Google Gemini and OpenRouter (OpenAI-compatible) by setting env vars
+- 🐳 **Docker-ready** — includes Dockerfile for Azure Container Apps or any container host
 
-The live app is driven by [streamlit_app.py](streamlit_app.py) and the [core](core) modules.
+## 🚀 Quick Start
 
-1. The user pastes a video or playlist URL into the Streamlit app.
-2. The app decides whether the URL is a single video or a playlist.
-3. Playlist expansion and video-title lookup are handled through [core/playlist.py](core/playlist.py) and [core/youtube_utils.py](core/youtube_utils.py), with `yt-dlp` still used for metadata-related work.
-4. Transcript retrieval is handled by [core/transcript.py](core/transcript.py), which calls the Supadata transcript API using `SUPADATA_API_KEY`.
-5. The app stores successful transcripts and transcript failures separately in Streamlit session state.
-6. Notes, flashcards, and quizzes are generated only when the user clicks the corresponding button for a video.
-7. While one generation task is running, all three buttons for the current UI state are disabled so the layout does not duplicate or shift during reruns.
-8. For chat, [core/rag.py](core/rag.py) chunks the available transcripts, embeds those chunks, embeds the user question, ranks chunks by cosine similarity, and builds a focused context window from the most relevant excerpts.
-9. The final answer is generated with the model configured by `GENERATION_MODEL_NAME` through [core/llm.py](core/llm.py), which defaults to `gemma-4-31b-it`, then sanitized to remove prompt-echo artifacts and repeated sentences before being shown in the UI.
+```bash
+# Clone
+git clone https://github.com/ShubhSarin/youtube-study-helper.git
+cd youtube-study-helper
 
-## 🔎 RAG Logic
+# Install
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
 
-The question-answering flow is no longer summary-based. It now works like this:
+# Configure (copy and edit)
+cp .env.example .env
+# Fill in your API keys in .env
 
-1. Transcript text is split into overlapping chunks.
-2. Each chunk is embedded with the model configured by `EMBEDDING_MODEL_NAME`, which defaults to `models/gemini-embedding-001`, using the `retrieval_document` task type.
-3. The user question is embedded with the `retrieval_query` task type.
-4. Chunks are ranked by cosine similarity against the query embedding.
-5. The top transcript excerpts are passed to the generation model.
-6. The answer is cleaned so internal prompt structure such as `Question:`, `Constraint:`, `Source:`, and `Draft:` does not leak into the final response.
+# Run
+streamlit run streamlit_app.py
+```
 
-This makes the app answer from the transcript evidence itself instead of pushing the full transcript into one prompt or relying on pre-generated summaries.
+## ⚙️ Environment Variables
 
-## ⚙️ Environment Loading
+Copy `.env.example` to `.env` and fill in your keys:
 
-The project does not depend on `python-dotenv` at runtime anymore.
+| Variable | Description | Required |
+|---|---|---|
+| `SUPADATA_API_KEY` | [Supadata](https://supadata.ai) API key for transcript extraction | ✅ |
+| `OPENROUTER_API_KEY` | [OpenRouter](https://openrouter.ai) API key (uses this if set) | *(one of these)* |
+| `OPENROUTER_BASE_URL` | OpenRouter base URL (default: `https://openrouter.ai/api/v1`) | |
+| `OPENROUTER_MODEL_NAME` | Chat model (default: `xiaomi/mimo-v2.5`) | |
+| `OPENROUTER_EMBEDDING_MODEL_NAME` | Embedding model (default: `openai/text-embedding-3-small`) | |
+| `GOOGLE_API_KEY` | Google Gemini API key (used when `OPENROUTER_API_KEY` is empty) | *(one of these)* |
+| `GENERATION_MODEL_NAME` | Gemini generation model (default: `xiaomi/mimo-v2.5`) | |
+| `EMBEDDING_MODEL_NAME` | Gemini embedding model (default: `openai/text-embedding-3-small`) | |
 
-- [core/env_utils.py](core/env_utils.py) reads values from the real environment first.
-- If a variable is not present in the runtime environment, it falls back to reading the local `.env` file directly.
-- The custom loader supports multiline quoted values, which is important for `YOUTUBE_COOKIES_CONTENT`.
-- If `YOUTUBE_COOKIES_CONTENT` is present, [streamlit_app.py](streamlit_app.py) syncs it into `youtube_cookies.txt` only when the contents change.
+> **How it works:** If `OPENROUTER_API_KEY` is set → uses OpenRouter with OpenAI-compatible client. Otherwise → falls back to Google Gemini SDK.
+
+## 🧠 How It Works
+
+```mermaid
+flowchart LR
+    A[YouTube URL] --> B{Playlist?}
+    B -->|Yes| C[Fetch all video IDs]
+    B -->|No| D[Extract single video ID]
+    C --> E[Supadata transcript API]
+    D --> E
+    E --> F[Chunk transcripts]
+    F --> G[Embed chunks]
+    G --> H[In-memory index]
+    H --> I[Notes / Flashcards / Quiz]
+    H --> J[RAG Q&A]
+    J --> K[Cosine similarity retrieval]
+    K --> L[LLM generates answer]
+```
+
+## 🐳 Docker Deployment
+
+```bash
+docker build -t youtube-study-helper .
+docker run -p 8501:8501 --env-file .env youtube-study-helper
+```
+
+For Azure Container App deployment, see [DEPLOY.md](DEPLOY.md).
+
+## 📁 Project Structure
+
+```
+.
+├── streamlit_app.py          # Streamlit UI
+├── core/
+│   ├── llm.py                # LLM client (Gemini / OpenRouter)
+│   ├── transcript.py         # Supadata transcript retrieval
+│   ├── summarizer.py         # Study notes generation
+│   ├── flashcards.py         # Flashcard generation
+│   ├── quiz.py               # Quiz generation
+│   ├── rag.py                # RAG retrieval + Q&A
+│   ├── youtube_utils.py      # YouTube URL parsing
+│   ├── playlist.py           # Playlist video ID extraction
+│   └── env_utils.py          # .env file reader (no python-dotenv)
+├── agents/                   # (experimental)
+├── Dockerfile
+├── DEPLOY.md                 # Azure deployment guide
+├── .env.example              # Environment variable template
+└── requirements.txt
+```
+
+## 📄 License
+
+MIT — use it, modify it, share it.
 
 ## 🚀 Getting Started
 
