@@ -3,3 +3,4 @@ google-generativeai
 google-adk
 requests
 yt-dlp
+openai
