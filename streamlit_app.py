@@ -35,15 +35,8 @@ st.markdown(
         color: #6b7280;
         margin-bottom: 1.5rem;
     }
-    .video-card {
-        background: transparent;
-        border: 1px solid rgba(128, 128, 128, 0.2);
-        border-radius: 12px;
-        padding: 1.25rem 1.5rem;
-        margin-bottom: 1rem;
-    }
     .video-title {
-        font-size: 1.15rem;
+        font-size: 2.3rem;
         font-weight: 600;
         margin-bottom: 0.75rem;
     }
@@ -185,7 +178,11 @@ with col_url:
     )
 is_busy = st.session_state.get("processing", False) or st.session_state.get("pending_generation") is not None
 with col_btn:
-    process_clicked = st.button("🚀 Process", use_container_width=True, disabled=is_busy)
+    if is_busy:
+        st.caption("⏳ Working...")
+        process_clicked = False
+    else:
+        process_clicked = st.button("🚀 Process", use_container_width=True)
 
 if process_clicked and url and not st.session_state.get("processing") and not st.session_state.get("pending_generation"):
     st.session_state["processing"] = True
@@ -222,20 +219,6 @@ if st.session_state.get("processing_result"):
     st.session_state["processing_result"] = None
 
 # ---------------------------------------------------------------------------
-# Handle pending generation (must happen BEFORE rendering cards to avoid
-# st.rerun() cutting off HTML elements mid-render)
-# ---------------------------------------------------------------------------
-pending_generation = st.session_state.get("pending_generation")
-if pending_generation:
-    vid = pending_generation["video_id"]
-    action = pending_generation["action"]
-    try:
-        run_generation_action(vid, action)
-    finally:
-        st.session_state["pending_generation"] = None
-    st.rerun()
-
-# ---------------------------------------------------------------------------
 # Video cards (only render when not busy with processing)
 # ---------------------------------------------------------------------------
 if st.session_state["video_ids"] and not st.session_state.get("processing"):
@@ -244,26 +227,27 @@ if st.session_state["video_ids"] and not st.session_state.get("processing"):
     for vid in st.session_state["video_ids"]:
         title = st.session_state["video_titles"].get(vid, vid)
 
-        st.markdown(f'<div class="video-card">', unsafe_allow_html=True)
         st.markdown(f'<p class="video-title">🎬 {title}</p>', unsafe_allow_html=True)
 
         transcript_error = st.session_state["transcript_errors"].get(vid)
         if transcript_error:
             st.error(transcript_error)
-            st.markdown("</div>", unsafe_allow_html=True)
             continue
 
-        # Action buttons
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            if st.button("📘 Notes", key=f"summary_{vid}", disabled=is_busy, use_container_width=True):
-                queue_generation(vid, "summary")
-        with col2:
-            if st.button("🧠 Flashcards", key=f"flashcards_{vid}", disabled=is_busy, use_container_width=True):
-                queue_generation(vid, "flashcards")
-        with col3:
-            if st.button("📝 Quiz", key=f"quiz_{vid}", disabled=is_busy, use_container_width=True):
-                queue_generation(vid, "quiz")
+        # Action buttons (hidden entirely when busy to prevent click races)
+        if is_busy:
+            st.caption("⏳ Generating...")
+        else:
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                if st.button("📘 Notes", key=f"summary_{vid}", use_container_width=True):
+                    queue_generation(vid, "summary")
+            with col2:
+                if st.button("🧠 Flashcards", key=f"flashcards_{vid}", use_container_width=True):
+                    queue_generation(vid, "flashcards")
+            with col3:
+                if st.button("📝 Quiz", key=f"quiz_{vid}", use_container_width=True):
+                    queue_generation(vid, "quiz")
 
         # Display generated content in tabs
         has_notes = vid in st.session_state["summaries"]
@@ -292,7 +276,18 @@ if st.session_state["video_ids"] and not st.session_state.get("processing"):
                 with tabs[tab_idx]:
                     st.markdown(st.session_state["quizzes"][vid])
 
-        st.markdown("</div>", unsafe_allow_html=True)
+# ---------------------------------------------------------------------------
+# Handle pending generation (after cards render so buttons are hidden)
+# ---------------------------------------------------------------------------
+pending_generation = st.session_state.get("pending_generation")
+if pending_generation:
+    vid = pending_generation["video_id"]
+    action = pending_generation["action"]
+    try:
+        run_generation_action(vid, action)
+    finally:
+        st.session_state["pending_generation"] = None
+    st.rerun()
 
 # ---------------------------------------------------------------------------
 # Q&A section
