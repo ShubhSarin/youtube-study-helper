@@ -1,14 +1,12 @@
 from dataclasses import dataclass
-import hashlib
-import json
 import logging
 import math
 import re
 
 from core.llm import call_llm, embed_texts
 
-CHUNK_WORD_COUNT = 180
-CHUNK_OVERLAP = 40
+CHUNK_WORD_COUNT = 200
+CHUNK_OVERLAP = 50
 TOP_K_CHUNKS = 5
 MIN_CHUNK_WORDS = 40
 MAX_INDEX_CACHE_SIZE = 8
@@ -94,18 +92,12 @@ def _build_chunks(transcripts: dict, video_titles: dict) -> list[TranscriptChunk
     return chunks
 
 
-def _build_snapshot_key(transcripts: dict) -> str:
-    payload = {
-        "chunk_word_count": CHUNK_WORD_COUNT,
-        "chunk_overlap": CHUNK_OVERLAP,
-        "transcripts": {
-            video_id: transcript
-            for video_id, transcript in sorted(transcripts.items())
-            if transcript and not transcript.startswith("Error:")
-        },
-    }
-    serialized = json.dumps(payload, sort_keys=True, ensure_ascii=False)
-    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+def _build_cache_key(transcripts: dict) -> str:
+    ids = sorted(
+        vid for vid, t in transcripts.items()
+        if t and not t.startswith("Error:")
+    )
+    return ",".join(ids)
 
 
 def _remember_embedding_index(
@@ -126,7 +118,7 @@ def _get_embedding_index(
     transcripts: dict,
     video_titles: dict,
 ) -> tuple[list[TranscriptChunk], list[list[float]]]:
-    cache_key = _build_snapshot_key(transcripts)
+    cache_key = _build_cache_key(transcripts)
     cached_index = _EMBEDDING_INDEX_CACHE.get(cache_key)
     if cached_index:
         return cached_index
