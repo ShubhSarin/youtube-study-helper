@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "YouTube Study Helper — Project Structure",
+    "output": "youtube-helper.architecture.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/ShubhSarin/youtube-study-helper",
+      "revision": "66a76492d195dbb224c08182fd45aee39e4e4610"
+    },
+    "views": [
+      { "id": "process-path", "label": "Process a video", "focus": ["streamlit_app", "youtube_utils", "playlist", "transcript", "supadata", "generators"], "note": "From a pasted YouTube URL to generated notes, flashcards, and quiz." },
+      { "id": "qa-path", "label": "Ask a question", "focus": ["streamlit_app", "rag", "llm", "llm_service"], "note": "RAG retrieves transcript chunks, then the LLM answers grounded in excerpts." }
+    ]
+  },
+  "components": [
+    { "id": "streamlit_app", "type": "frontend", "label": "streamlit_app.py", "sublabel": "Streamlit UI · entrypoint", "tag": "live app", "pos": [340, 40], "size": [220, 84], "sources": [{ "path": "streamlit_app.py", "line": 1, "label": "app entrypoint" }] },
+    { "id": "youtube_utils", "type": "backend", "label": "youtube_utils.py", "sublabel": "core/ · URL parse & metadata", "pos": [30, 212], "size": [195, 76], "sources": [{ "path": "core/youtube_utils.py", "line": 92, "label": "extract_video_id" }] },
+    { "id": "playlist", "type": "backend", "label": "playlist.py", "sublabel": "core/ · playlist expansion", "pos": [255, 212], "size": [195, 76], "sources": [{ "path": "core/playlist.py", "line": 5, "label": "get_video_ids_from_playlist" }] },
+    { "id": "transcript", "type": "backend", "label": "transcript.py", "sublabel": "core/ · Supadata retrieval", "pos": [480, 212], "size": [195, 76], "sources": [{ "path": "core/transcript.py", "line": 85, "label": "extract_transcripts_from_ids" }] },
+    { "id": "generators", "type": "backend", "label": "summarizer · flashcards · quiz", "sublabel": "core/ · study-material generation", "pos": [705, 212], "size": [240, 76], "sources": [{ "path": "core/summarizer.py", "line": 4, "label": "summarize_transcript" }, { "path": "core/flashcards.py", "line": 4, "label": "generate_flashcards" }, { "path": "core/quiz.py", "line": 4, "label": "generate_quiz" }] },
+    { "id": "rag", "type": "backend", "label": "rag.py", "sublabel": "core/ · chunk · embed · RAG Q&A", "pos": [965, 212], "size": [195, 76], "sources": [{ "path": "core/rag.py", "line": 284, "label": "answer_question" }] },
+    { "id": "env_utils", "type": "backend", "label": "env_utils.py", "sublabel": "core/ · .env loader", "pos": [255, 364], "size": [195, 76], "sources": [{ "path": "core/env_utils.py", "line": 8, "label": "read_env_value" }] },
+    { "id": "supadata", "type": "external", "label": "Supadata", "sublabel": "Transcript API", "pos": [480, 364], "size": [195, 76] },
+    { "id": "process", "type": "backend", "label": "process.py", "sublabel": "core/ · non-UI batch", "pos": [705, 364], "size": [195, 76], "sources": [{ "path": "core/process.py", "line": 9, "label": "process_youtube_url" }] },
+    { "id": "llm", "type": "backend", "label": "llm.py", "sublabel": "core/ · Gemini / OpenRouter client", "pos": [965, 364], "size": [195, 76], "sources": [{ "path": "core/llm.py", "line": 224, "label": "call_llm" }] },
+    { "id": "agents", "type": "backend", "label": "agent.py", "sublabel": "agents/ · ADK (experimental)", "tag": "not on live path", "pos": [705, 516], "size": [195, 76], "sources": [{ "path": "agents/agent.py", "line": 7, "label": "ADK agents" }] },
+    { "id": "llm_service", "type": "external", "label": "Gemini / OpenRouter", "sublabel": "generation · embeddings", "pos": [965, 516], "size": [210, 76] }
+  ],
+  "connections": [
+    { "id": "ui-parse", "from": "streamlit_app", "to": "youtube_utils", "label": "parse URL", "variant": "emphasis", "fromSide": "bottom", "toSide": "top", "labelDy": 29 },
+    { "id": "ui-playlist", "from": "streamlit_app", "to": "playlist", "label": "expand playlist", "fromSide": "bottom", "toSide": "top", "labelDy": 29 },
+    { "id": "ui-transcript", "from": "streamlit_app", "to": "transcript", "label": "fetch transcripts", "variant": "emphasis", "fromSide": "bottom", "toSide": "top", "labelDy": 29 },
+    { "id": "ui-generate", "from": "streamlit_app", "to": "generators", "label": "notes · cards · quiz", "variant": "emphasis", "fromSide": "bottom", "toSide": "top", "labelDy": 29 },
+    { "id": "ui-rag", "from": "streamlit_app", "to": "rag", "label": "answer question", "variant": "emphasis", "fromSide": "bottom", "toSide": "top", "labelDy": 29 },
+    { "id": "utils-playlist", "from": "youtube_utils", "to": "playlist", "label": "playlist id", "fromSide": "right", "toSide": "left", "labelDy": 65 },
+    { "id": "transcript-supadata", "from": "transcript", "to": "supadata", "label": "Supadata API", "fromSide": "bottom", "toSide": "top", "labelAt": [578, 302] },
+    { "id": "gen-llm", "from": "generators", "to": "llm", "label": "call_llm", "fromSide": "bottom", "toSide": "top" },
+    { "id": "rag-llm", "from": "rag", "to": "llm", "label": "call_llm · embed", "fromSide": "bottom", "toSide": "top", "labelAt": [1070, 302] },
+    { "id": "llm-service", "from": "llm", "to": "llm_service", "label": "generate · embed", "fromSide": "bottom", "toSide": "top" },
+    { "id": "env-transcript", "from": "env_utils", "to": "transcript", "label": "API key", "variant": "dashed", "fromSide": "top", "toSide": "left" },
+    { "id": "process-transcript", "from": "process", "to": "transcript", "label": "batch", "variant": "dashed", "fromSide": "left", "toSide": "right", "labelSegment": 1, "labelDx": -22 }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Frontend", "items": ["streamlit_app.py runs the entire session", "Session state, per-video tabs, spinner guards"] },
+    { "dot": "emerald", "title": "Core package", "items": ["YouTube URL + playlist parsing", "Notes / flashcards / quiz via LLM", "Cached embedding RAG over chunks"] },
+    { "dot": "rose", "title": "External", "items": ["Supadata Transcript API for captions", "Gemini or OpenRouter for generation + embeddings"] }
+  ]
+}

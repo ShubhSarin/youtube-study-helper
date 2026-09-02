@@ -1,6 +1,7 @@
-streamlit
-google-generativeai
-google-adk
 requests
 yt-dlp
 openai
+google-generativeai
+fastapi
+uvicorn[standard]
+pydantic

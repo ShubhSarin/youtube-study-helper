@@ -1,13 +1,15 @@
 # 🎓 YouTube Study Helper
 
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/)
-[![Streamlit](https://img.shields.io/badge/Streamlit-1.x-FF4B4B.svg)](https://streamlit.io/)
+[![React](https://img.shields.io/badge/React-19-61DAFB.svg)](https://react.dev/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-latest-009688.svg)](https://fastapi.tiangolo.com/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 Turn YouTube videos and playlists into study material with AI. Paste a URL, get **notes**, **flashcards**, and **quizzes** — then ask questions with retrieval-augmented generation (RAG) over the full transcript.
 
 ## ✨ Features
 
+- 🖥️ **Real UI** — React + Vite + Tailwind SPA served by FastAPI (no Streamlit)
 - 📺 **Single video or playlist** — process one lecture or an entire course
 - 📘 **Study notes** — chapter-wise notes generated from the transcript
 - 🧠 **Flashcards** — concise Q&A pairs for active recall
@@ -15,7 +17,7 @@ Turn YouTube videos and playlists into study material with AI. Paste a URL, get 
 - 💬 **RAG-powered Q&A** — ask questions across all processed videos; answers are grounded in transcript excerpts, not summaries
 - ☁️ **Supadata transcripts** — reliable transcript retrieval that works in cloud deployments
 - 🔀 **Multi-provider LLM** — switch between Google Gemini and OpenRouter (OpenAI-compatible) by setting env vars
-- 🐳 **Docker-ready** — includes Dockerfile for Azure Container Apps or any container host
+- 🐳 **Docker-ready** — multi-stage build (Node build → FastAPI serves static SPA) for Azure Container Apps or any container host
 
 ## 🚀 Quick Start
 
@@ -24,17 +26,31 @@ Turn YouTube videos and playlists into study material with AI. Paste a URL, get 
 git clone https://github.com/ShubhSarin/youtube-study-helper.git
 cd youtube-study-helper
 
-# Install
+# Backend
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
+
+# Frontend (Node 18+)
+cd web && npm install && npm run build && cd ..
 
 # Configure (copy and edit)
 cp .env.example .env
 # Fill in your API keys in .env
 
-# Run
-streamlit run streamlit_app.py
+# Run — serves the API and the built UI on http://localhost:8000
+uvicorn api.main:app --reload --port 8000
 ```
+
+### Development mode (hot reload)
+
+```bash
+# Terminal 1 — API
+uvicorn api.main:app --reload --port 8000
+
+# Terminal 2 — Vite dev server with /api proxied to :8000
+cd web && npm run dev
+```
+
 
 ## ⚙️ Environment Variables
 
@@ -75,7 +91,8 @@ flowchart LR
 
 ```bash
 docker build -t youtube-study-helper .
-docker run -p 8501:8501 --env-file .env youtube-study-helper
+docker run -p 8000:8000 --env-file .env youtube-study-helper
+# UI + API at http://localhost:8000
 ```
 
 For Azure Container App deployment, see [DEPLOY.md](DEPLOY.md).
@@ -84,7 +101,15 @@ For Azure Container App deployment, see [DEPLOY.md](DEPLOY.md).
 
 ```
 .
-├── streamlit_app.py          # Streamlit UI
+├── api/
+│   ├── __init__.py
+│   └── main.py               # FastAPI backend: REST endpoints + SPA serving
+├── web/                      # React (Vite + TypeScript + Tailwind) frontend
+│   ├── src/
+│   │   ├── App.tsx           # UI: URL input, video cards, tabs, chat
+│   │   ├── api.ts            # Typed fetch client for the backend
+│   │   └── main.tsx
+│   └── vite.config.ts        # Dev proxy: /api → :8000
 ├── core/
 │   ├── llm.py                # LLM client (Gemini / OpenRouter)
 │   ├── transcript.py         # Supadata transcript retrieval
@@ -96,7 +121,7 @@ For Azure Container App deployment, see [DEPLOY.md](DEPLOY.md).
 │   ├── playlist.py           # Playlist video ID extraction
 │   └── env_utils.py          # .env file reader (no python-dotenv)
 ├── agents/                   # (experimental)
-├── Dockerfile
+├── Dockerfile                # Multi-stage: node build → fastapi serve
 ├── DEPLOY.md                 # Azure deployment guide
 ├── .env.example              # Environment variable template
 └── requirements.txt
@@ -150,10 +175,10 @@ Notes:
 ### Running the App
 
 ```bash
-streamlit run streamlit_app.py
+uvicorn api.main:app --port 8000
 ```
 
-By default, Streamlit opens the app in your browser on a local port such as `8501`.
+The API and the built React UI are served at `http://localhost:8000`.
 
 ## 📖 Usage
 
@@ -169,7 +194,9 @@ If transcript extraction fails for some videos, the app keeps the successful vid
 
 ```text
 youtube-study-helper/
-├── streamlit_app.py          # Active Streamlit entrypoint and session-state UI flow
+├── api/
+│   └── main.py               # FastAPI entrypoint: REST endpoints + SPA serving
+├── web/                      # React (Vite + TypeScript + Tailwind) SPA
 ├── transcript_extractor.py   # Compatibility shim around the new transcript backend
 ├── requirements.txt          # Python dependencies
 ├── core/
@@ -189,7 +216,8 @@ youtube-study-helper/
 
 ## 🛠️ Technology Stack
 
-- [Streamlit](https://streamlit.io/) for the UI
+- [React 19](https://react.dev/) + [Vite](https://vite.dev/) + [Tailwind CSS](https://tailwindcss.com/) for the SPA frontend
+- [FastAPI](https://fastapi.tiangolo.com/) for the REST backend and static SPA serving
 - [Google Generative AI](https://ai.google.dev/) for generation and embeddings
 - `GENERATION_MODEL_NAME` with a default of `gemma-4-31b-it` for notes, flashcards, quizzes, and RAG answers
 - `EMBEDDING_MODEL_NAME` with a default of `models/gemini-embedding-001` for transcript and query embeddings
@@ -199,7 +227,8 @@ youtube-study-helper/
 
 ## 🔑 Key Modules
 
-- [streamlit_app.py](streamlit_app.py): orchestrates the app, session state, per-video actions, and chat flow
+- [api/main.py](api/main.py): FastAPI app — REST endpoints for process/generate/ask, per-session state, SPA serving
+- [web/src/App.tsx](web/src/App.tsx): React UI — URL processing, per-video generation tabs, RAG chat
 - [core/transcript.py](core/transcript.py): fetches transcripts from Supadata and reports failures cleanly
 - [core/llm.py](core/llm.py): wraps model generation, embedding calls, and safe fallback behavior
 - [core/rag.py](core/rag.py): performs transcript chunking, embedding retrieval, answer generation, and answer sanitization
@@ -212,7 +241,7 @@ youtube-study-helper/
 - Generation and embedding model selection can be overridden with `GENERATION_MODEL_NAME` and `EMBEDDING_MODEL_NAME`.
 - Transcript retrieval errors are handled per video so a bad item does not stop a full playlist.
 - The RAG layer caches transcript-chunk embeddings by transcript snapshot to avoid rebuilding the index on every question.
-- ADK agents in [agents/agent.py](agents/agent.py) were updated to use the same model, but the live application path is still Streamlit plus the `core` modules.
+- ADK agents in [agents/agent.py](agents/agent.py) were updated to use the same model, but the live application path is FastAPI plus the `core` modules.
 
 ## 🎯 Use Cases
 
@@ -226,4 +255,4 @@ youtube-study-helper/
 
 - Google Generative AI for generation and embeddings
 - Supadata for hosted-friendly transcript retrieval
-- Streamlit for the web app framework
+- React, Vite, Tailwind CSS, and FastAPI for the app framework
