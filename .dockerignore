@@ -7,10 +7,8 @@ __pycache__
 .devcontainer
 .env
 .git
-requirements.txt
 requirement.txt
 README.MD
 DEPLOY.md
 diagrams
 agents
-streamlit_app.py
